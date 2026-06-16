@@ -35,3 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `ConfigFlowResult` return type annotations — caused 500 error on older HA builds
 - Fixed wrong PyPI package name: `tgtg-python` → `tgtg>=0.17.0`
 - Fixed documentation and issue_tracker URLs in manifest.json
+
+## [1.0.3] - 2026-06-16
+
+### Changed
+- **New authentication flow**: Replaced magic link (async/manual verification) with **PIN code from email** ✉️
+  - User enters email → TGTG sends PIN code email → User pastes 6-digit PIN in HA config flow
+  - Much simpler, no need to click links or wait for email verification
+  - Both EN and DA translations updated
+
+### Technical
+- Uses TGTG API endpoints: `/auth/v0/requestPolling` + `/auth/v0/validateToken`
+- Polling ID tracked per login session
+- More reliable error handling for PIN validation

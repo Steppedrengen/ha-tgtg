@@ -30,6 +30,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._email: str | None = None
         self._credentials: dict | None = None
         self._client: Any = None
+        self._polling_id: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Step 1 — collect email address."""
@@ -44,16 +45,25 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
 
-                self._client = await self.hass.async_add_executor_job(
-                    lambda: TgtgClient(email=email)
-                )
+                def _init_client():
+                    client = TgtgClient(email=email)
+                    # Initiate polling-based login (sends email with PIN)
+                    polling_resp = client._post(
+                        client._get_url("auth/v0/requestPolling"),
+                        json={"device_type": client.device_type, "email": email},
+                    )
+                    polling_data = polling_resp.json()
+                    self._polling_id = polling_data.get("polling_id")
+                    return client
+
+                self._client = await self.hass.async_add_executor_job(_init_client)
                 self._email = email
-                return await self.async_step_link()
+                return await self.async_step_pin()
 
             except ImportError:
                 errors["base"] = "missing_dependency"
             except Exception as err:  # noqa: BLE001
-                _LOGGER.exception("Error starting TGTG login: %s", err)
+                _LOGGER.exception("Error initiating TGTG login: %s", err)
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
@@ -62,23 +72,49 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_link(self, user_input: dict[str, Any] | None = None):
-        """Step 2 — user clicks magic link, then submits here."""
+    async def async_step_pin(self, user_input: dict[str, Any] | None = None):
+        """Step 2 — user enters PIN from email."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                self._credentials = await self.hass.async_add_executor_job(
-                    self._client.get_credentials
-                )
-                return await self.async_step_options()
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.error("TGTG credential fetch failed: %s", err)
-                errors["base"] = "invalid_auth"
+            pin = user_input.get("pin", "").strip()
+            if not pin:
+                errors["pin"] = "pin_required"
+            else:
+                try:
+                    def _auth_with_pin():
+                        resp = self._client._post(
+                            self._client._get_url("auth/v0/validateToken"),
+                            json={
+                                "device_type": self._client.device_type,
+                                "email": self._email,
+                                "request_polling_id": self._polling_id,
+                                "validate_token": pin,
+                            },
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            login_resp = data.get("login_response", {})
+                            return {
+                                "access_token": login_resp.get("access_token"),
+                                "refresh_token": login_resp.get("refresh_token"),
+                                "cookie": data.get("cookie"),
+                            }
+                        else:
+                            raise Exception(f"PIN validation failed: {resp.status_code}")
+
+                    self._credentials = await self.hass.async_add_executor_job(
+                        _auth_with_pin
+                    )
+                    return await self.async_step_options()
+
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error("PIN validation failed: %s", err)
+                    errors["base"] = "invalid_pin"
 
         return self.async_show_form(
-            step_id="link",
-            data_schema=vol.Schema({}),
+            step_id="pin",
+            data_schema=vol.Schema({vol.Required("pin"): str}),
             description_placeholders={"email": self._email or ""},
             errors=errors,
         )

@@ -3,14 +3,17 @@
     "step": {
       "user": {
         "title": "Too Good To Go",
-        "description": "Enter your Too Good To Go email address. A magic link will be sent to your inbox — no password needed.",
+        "description": "Enter your Too Good To Go email address. You'll receive an email with a PIN code.",
         "data": {
           "email": "Email address"
         }
       },
-      "link": {
-        "title": "Check your email",
-        "description": "A login link has been sent to **{email}**.\n\n1. Open the email from Too Good To Go\n2. Click the login link\n3. Come back here and press **Submit**"
+      "pin": {
+        "title": "Enter PIN Code",
+        "description": "A PIN code has been sent to **{email}**.\n\nCheck your email and enter the 6-digit PIN below.",
+        "data": {
+          "pin": "PIN code"
+        }
       },
       "options": {
         "title": "Update interval",
@@ -21,9 +24,10 @@
       }
     },
     "error": {
-      "invalid_auth": "Could not retrieve credentials. Make sure you clicked the link in the email before pressing Submit.",
-      "cannot_connect": "Could not connect to Too Good To Go. Check your internet connection and try again.",
-      "missing_dependency": "The tgtg-python package is not installed. Restart Home Assistant and try again."
+      "invalid_pin": "Invalid PIN code. Please check your email and try again.",
+      "cannot_connect": "Could not connect to Too Good To Go. Check your internet connection and email address.",
+      "missing_dependency": "The tgtg package is not installed. Restart Home Assistant and try again.",
+      "pin_required": "PIN code is required."
     },
     "abort": {
       "already_configured": "This Too Good To Go account is already configured."
