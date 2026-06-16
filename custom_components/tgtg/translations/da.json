@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Too Good To Go – Login",
+        "description": "Indtast din Too Good To Go e-mailadresse. Du modtager en loginmail fra TGTG.",
+        "data": {
+          "email": "E-mail"
+        }
+      },
+      "login": {
+        "title": "Bekræft login",
+        "description": "En loginmail er sendt til **{email}**.\n\nÅbn e-mailen fra Too Good To Go og klik på loginlinket. Kom derefter tilbage og tryk 'Send'."
+      },
+      "options": {
+        "title": "Indstillinger",
+        "description": "Vælg hvor ofte Too Good To Go data opdateres.",
+        "data": {
+          "scan_interval": "Opdateringsinterval (minutter)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login mislykkedes. Prøv igen – husk at klikke på linket i loginmailen."
+    },
+    "abort": {
+      "already_configured": "Too Good To Go er allerede konfigureret med denne e-mail."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Too Good To Go – Indstillinger",
+        "data": {
+          "scan_interval": "Opdateringsinterval (minutter)"
+        }
+      }
+    }
+  }
+}

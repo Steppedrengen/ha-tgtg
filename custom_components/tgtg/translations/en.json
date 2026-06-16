@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Too Good To Go – Login",
+        "description": "Enter your Too Good To Go email address. You will receive a magic link email from TGTG.",
+        "data": {
+          "email": "Email"
+        }
+      },
+      "login": {
+        "title": "Confirm Login",
+        "description": "A login email has been sent to **{email}**.\n\nOpen the email from Too Good To Go and click the login link. Then come back here and press 'Submit'."
+      },
+      "options": {
+        "title": "Options",
+        "description": "Choose how often to update Too Good To Go data.",
+        "data": {
+          "scan_interval": "Update interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Please try again – make sure to click the link in the login email first."
+    },
+    "abort": {
+      "already_configured": "Too Good To Go is already configured with this email."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Too Good To Go – Options",
+        "data": {
+          "scan_interval": "Update interval (minutes)"
+        }
+      }
+    }
+  }
+}
