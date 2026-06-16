@@ -29,7 +29,7 @@ A custom Home Assistant integration that pulls your **Too Good To Go** favourite
 |---|---|
 | Home Assistant | 2023.1+ |
 | HACS | 1.x |
-| Python package | `tgtg-python >= 7.5.9` *(auto-installed)* |
+| Python package | `tgtg >= 0.17.0` *(auto-installed)* |
 | TGTG account | Free account with ≥ 1 favourite store |
 
 ---
@@ -61,14 +61,42 @@ A custom Home Assistant integration that pulls your **Too Good To Go** favourite
 
 ## ⚙️ Configuration
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **Too Good To Go**
-3. Enter your TGTG **email address**
-4. **Check your email** — TGTG sends a magic link (no password needed)
-5. Click the link in the email, then return to HA and press **Submit**
-6. Choose your preferred **update interval** (default: 5 minutes)
+Authentication uses a **PIN code sent to your email** — no password needed.
 
-> ⚠️ **Note:** Too Good To Go uses passwordless "magic link" login. You must click the link in the email *before* pressing Submit in HA.
+### Step-by-step
+
+**1. Add the integration**
+
+Go to **Settings → Devices & Services → Add Integration** and search for **Too Good To Go**.
+
+**2. Enter your email address**
+
+Type the email address linked to your Too Good To Go account and press **Submit**.
+
+> ⚠️ The email must already be registered in the TGTG app. If you don't have an account yet, sign up in the app first.
+
+**3. Check your email for a PIN code**
+
+Too Good To Go will send an email to your inbox with a **6-digit PIN code**. It looks like this:
+
+```
+Subject: Your Too Good To Go login code
+Your login PIN: 123456
+```
+
+> 📬 Check your spam folder if you don't see it within a minute or two.
+
+**4. Enter the PIN in Home Assistant**
+
+Go back to the Home Assistant config flow and type the **6-digit PIN** into the PIN field, then press **Submit**.
+
+**5. Set your update interval**
+
+Choose how often HA should poll Too Good To Go for new availability (default: every 5 minutes). Press **Submit** to finish.
+
+**6. Done!**
+
+Your favourite TGTG stores will appear as sensor entities within a few seconds.
 
 ---
 
@@ -97,7 +125,7 @@ sensor.tgtg_lagkagehuset_norreport
 | `items_max` | `int` | Maximum bags per slot |
 | `pickup_start` | `str` | Pickup window start (ISO 8601) |
 | `pickup_end` | `str` | Pickup window end (ISO 8601) |
-| `pickup_display` | `str` | Pickup window (formatted, e.g. `17/06 19:30 – 20:30`) |
+| `pickup_display` | `str` | Pickup window formatted (e.g. `17/06 19:30 – 20:30`) |
 | `price` | `str` | Price excl. taxes |
 | `price_including_taxes` | `str` | Price incl. taxes |
 | `currency` | `str` | Currency code (e.g. `DKK`) |
@@ -230,18 +258,20 @@ action:
 
 | Problem | Solution |
 |---|---|
-| **"Login failed"** | Make sure you clicked the TGTG email link *before* pressing Submit in HA |
+| **No PIN email received** | Check your spam folder. Make sure the email is registered in the TGTG app. Wait 1–2 minutes and try again. |
+| **"Incorrect PIN"** | PIN codes expire after a short time — restart the setup flow to request a new one |
+| **"Too many login attempts"** | Wait 5–10 minutes before trying again |
+| **"Email not registered"** | Sign up via the Too Good To Go app first, then return to HA setup |
 | **No sensors created** | Add stores as favourites in the TGTG app — only favourites are fetched |
 | **Rate limit / blocked** | Increase the update interval to 10–15 minutes minimum |
 | **`distance_km` missing** | Set your home location in *HA Settings → System → General* |
-| **Sensors go unavailable** | TGTG may have rotated your tokens — re-authenticate via the integration options |
+| **Sensors go unavailable** | TGTG may have rotated your tokens — delete and re-add the integration |
 
-### Logs
+### Enable debug logging
 
-Enable debug logging to troubleshoot:
+Add to `configuration.yaml` to see detailed API responses in the HA log:
 
 ```yaml
-# configuration.yaml
 logger:
   default: warning
   logs:
@@ -266,7 +296,7 @@ Please open an [issue](https://github.com/Steppedrengen/ha-tgtg/issues) before s
 
 ## ⚖️ Legal
 
-This integration uses the **unofficial** Too Good To Go API via the [`tgtg-python`](https://github.com/ahivert/tgtg-python) library. It is not affiliated with, endorsed by, or supported by Too Good To Go. Use responsibly — set a reasonable polling interval to avoid being rate-limited.
+This integration uses the **unofficial** Too Good To Go API via the [`tgtg`](https://github.com/ahivert/tgtg-python) library. It is not affiliated with, endorsed by, or supported by Too Good To Go. Use responsibly — set a reasonable polling interval to avoid being rate-limited.
 
 ---
 
