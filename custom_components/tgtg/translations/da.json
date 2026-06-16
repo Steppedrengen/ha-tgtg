@@ -25,11 +25,8 @@
     },
     "error": {
       "invalid_pin": "Ugyldig PIN-kode. Tjek din e-mail og prøv igen.",
-      "invalid_auth": "Godkendelse mislykkedes. Prøv at starte forfra.",
       "cannot_connect": "Kunne ikke forbinde til Too Good To Go. Tjek din internetforbindelse og e-mailadresse.",
       "missing_dependency": "Pakken tgtg er ikke installeret. Genstart Home Assistant og prøv igen.",
-      "not_registered": "Denne e-mailadresse er ikke tilknyttet en Too Good To Go-konto. Opret en konto i TGTG-appen først.",
-      "too_many_requests": "For mange forsøg. Vent 30 minutter og prøv igen.",
       "pin_required": "PIN-kode er påkrævet."
     },
     "abort": {
