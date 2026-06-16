@@ -48,3 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Uses TGTG API endpoints: `/auth/v0/requestPolling` + `/auth/v0/validateToken`
 - Polling ID tracked per login session
 - More reliable error handling for PIN validation
+
+## [1.0.4] - 2026-06-16
+
+### Fixed
+- PIN authentication was not working — `start_polling()` uses `input()` which doesn't work in async context
+- Now uses direct TGTG API calls to `/auth/v0/authByEmail` and `/auth/v0/authByRequestPin`
+- Removed dependency on `start_polling()` method
+- Better error messages for TGTG API failures

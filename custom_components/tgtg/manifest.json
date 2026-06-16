@@ -1,7 +1,7 @@
 {
   "domain": "tgtg",
   "name": "Too Good To Go",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "documentation": "https://github.com/Steppedrengen/ha-tgtg",
   "issue_tracker": "https://github.com/Steppedrengen/ha-tgtg/issues",
   "dependencies": [],

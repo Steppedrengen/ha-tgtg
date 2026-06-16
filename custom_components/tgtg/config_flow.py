@@ -19,6 +19,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# TGTG API endpoints
+AUTH_BY_EMAIL_ENDPOINT = "auth/v0/authByEmail"
+AUTH_BY_PIN_ENDPOINT = "auth/v0/authByRequestPin"
+
 
 class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Too Good To Go."""
@@ -45,19 +49,35 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
 
-                def _init_client():
-                    client = TgtgClient(email=email)
-                    # Initiate polling-based login (sends email with PIN)
-                    polling_resp = client._post(
-                        client._get_url("auth/v0/requestPolling"),
-                        json={"device_type": client.device_type, "email": email},
-                    )
-                    polling_data = polling_resp.json()
-                    self._polling_id = polling_data.get("polling_id")
-                    return client
-
-                self._client = await self.hass.async_add_executor_job(_init_client)
+                self._client = TgtgClient(email=email)
                 self._email = email
+
+                # Initiate email login flow
+                def _request_pin():
+                    resp = self._client._post(
+                        self._client._get_url(AUTH_BY_EMAIL_ENDPOINT),
+                        json={
+                            "device_type": self._client.device_type,
+                            "email": email,
+                        },
+                    )
+                    if resp.status_code != 200:
+                        raise Exception(
+                            f"TGTG API error: {resp.status_code} - {resp.text}"
+                        )
+                    data = resp.json()
+                    state = data.get("state")
+                    if state == "TERMS":
+                        raise Exception(
+                            f"Email {email} is not linked to a TGTG account. "
+                            "Please sign up in the TGTG app first."
+                        )
+                    if state != "WAIT":
+                        raise Exception(f"Unexpected auth state: {state}")
+                    self._polling_id = data.get("polling_id")
+                    return self._polling_id
+
+                await self.hass.async_add_executor_job(_request_pin)
                 return await self.async_step_pin()
 
             except ImportError:
@@ -82,30 +102,35 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["pin"] = "pin_required"
             else:
                 try:
-                    def _auth_with_pin():
+                    def _validate_pin():
                         resp = self._client._post(
-                            self._client._get_url("auth/v0/validateToken"),
+                            self._client._get_url(AUTH_BY_PIN_ENDPOINT),
                             json={
                                 "device_type": self._client.device_type,
                                 "email": self._email,
+                                "request_pin": pin,
                                 "request_polling_id": self._polling_id,
-                                "validate_token": pin,
                             },
                         )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            login_resp = data.get("login_response", {})
-                            return {
-                                "access_token": login_resp.get("access_token"),
-                                "refresh_token": login_resp.get("refresh_token"),
-                                "cookie": data.get("cookie"),
-                            }
-                        else:
-                            raise Exception(f"PIN validation failed: {resp.status_code}")
+                        if resp.status_code != 200:
+                            raise Exception(
+                                f"PIN validation failed: {resp.status_code}"
+                            )
+                        data = resp.json()
+                        cookie = resp.headers.get("Set-Cookie", "")
+                        return {
+                            "access_token": data.get("access_token"),
+                            "refresh_token": data.get("refresh_token"),
+                            "cookie": cookie,
+                        }
 
                     self._credentials = await self.hass.async_add_executor_job(
-                        _auth_with_pin
+                        _validate_pin
                     )
+
+                    if not self._credentials.get("access_token"):
+                        raise Exception("No access token in response")
+
                     return await self.async_step_options()
 
                 except Exception as err:  # noqa: BLE001
