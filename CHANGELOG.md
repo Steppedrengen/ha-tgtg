@@ -65,3 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_post()` is used so DataDome bot-protection cookie is handled automatically
 - Added `too_many_requests` and `not_registered` error messages
 - Debug logging added: check HA logs if issues persist
+
+## [1.0.6] - 2026-06-16
+
+### Fixed
+- **"already in progress" / "cannot connect" on email re-entry** — duplicate check no longer throws an abort exception that was being caught as a connection error; now shows a proper inline error message instead
+- **Sensor entity_id missing `tgtg_` prefix** — removed `_attr_has_entity_name = True` which was handing entity_id control to HA; entity_id is now explicitly set as `sensor.tgtg_<store_name>` with a slugifier that handles Danish characters (å→a, ø→o, æ→ae)
+- **Sensor friendly name** now also prefixed: `TGTG Lagkagehuset Nørreport`
+- PIN error key corrected from `errors["pin"]` to `errors["base"]` for proper display

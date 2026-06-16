@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from math import atan2, cos, radians, sin, sqrt
 from typing import Any
 
@@ -53,7 +54,6 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _format_price(price_data: dict | None) -> str | None:
-    """Format price from TGTG API response."""
     if not price_data:
         return None
     minor_units = price_data.get("minor_units", 0)
@@ -62,7 +62,6 @@ def _format_price(price_data: dict | None) -> str | None:
 
 
 def _format_pickup_interval(interval: dict | None) -> str | None:
-    """Format pickup interval as Danish-friendly string."""
     if not interval:
         return None
     start = interval.get("start", "")
@@ -78,6 +77,18 @@ def _format_pickup_interval(interval: dict | None) -> str | None:
     return None
 
 
+def _slugify(text: str) -> str:
+    """Convert store name to a safe slug for entity_id."""
+    text = text.lower().strip()
+    text = re.sub(r"[åä]", "a", text)
+    text = re.sub(r"[öø]", "o", text)
+    text = re.sub(r"[æ]", "ae", text)
+    text = re.sub(r"[éèê]", "e", text)
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -85,16 +96,16 @@ async def async_setup_entry(
 ) -> None:
     """Set up TGTG sensors from config entry."""
     coordinator: DataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][COORDINATOR]
-
     known_item_ids: set[str] = set()
 
     def _create_new_entities() -> None:
-        """Create new sensor entities for newly discovered items."""
         new_entities = []
         for item_id, item_data in coordinator.data.items():
             if item_id not in known_item_ids:
                 known_item_ids.add(item_id)
-                new_entities.append(TgtgItemSensor(coordinator, item_id, entry.entry_id, hass))
+                new_entities.append(
+                    TgtgItemSensor(coordinator, item_id, entry.entry_id, hass)
+                )
         if new_entities:
             async_add_entities(new_entities)
 
@@ -103,9 +114,10 @@ async def async_setup_entry(
 
 
 class TgtgItemSensor(CoordinatorEntity, SensorEntity):
-    """Sensor representing a single TGTG store/item."""
+    """Sensor representing a single TGTG store."""
 
-    _attr_has_entity_name = True
+    # Do NOT set _attr_has_entity_name = True — that hands entity_id
+    # control to HA and removes the tgtg_ prefix. We control it manually.
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
@@ -115,20 +127,48 @@ class TgtgItemSensor(CoordinatorEntity, SensorEntity):
         entry_id: str,
         hass: HomeAssistant,
     ) -> None:
-        """Initialize the sensor."""
         super().__init__(coordinator)
         self._item_id = item_id
         self._entry_id = entry_id
         self._hass = hass
-        self._attr_unique_id = f"{entry_id}_{item_id}"
+        self._attr_unique_id = f"tgtg_{entry_id}_{item_id}"
+
+        # Build a stable entity_id slug from store name at creation time
+        store = self._item_data.get("store", {}) if self._item_data else {}
+        store_name = store.get("store_name", item_id)
+        branch = store.get("branch", "")
+        slug = _slugify(f"{store_name}_{branch}" if branch else store_name)
+        self.entity_id = f"sensor.tgtg_{slug}"
 
     @property
     def _item_data(self) -> dict | None:
         return self.coordinator.data.get(self._item_id)
 
     @property
-    def _store_coords(self) -> tuple[float, float] | None:
-        """Extract store GPS coordinates from item data."""
+    def name(self) -> str:
+        if self._item_data:
+            store = self._item_data.get("store", {})
+            store_name = store.get("store_name", "Unknown store")
+            branch = store.get("branch", "")
+            return f"TGTG {store_name} {branch}".strip() if branch else f"TGTG {store_name}"
+        return f"TGTG {self._item_id}"
+
+    @property
+    def icon(self) -> str:
+        if self._item_data and self._item_data.get("items_available", 0) > 0:
+            return "mdi:shopping-outline"
+        return "mdi:shopping-remove"
+
+    @property
+    def native_value(self) -> int:
+        return (self._item_data or {}).get("items_available", 0)
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        return "bags"
+
+    @property
+    def _distance_km(self) -> float | None:
         if not self._item_data:
             return None
         location = (
@@ -137,46 +177,13 @@ class TgtgItemSensor(CoordinatorEntity, SensorEntity):
             .get("store_location", {})
             .get("location", {})
         )
-        lat = location.get("latitude")
-        lon = location.get("longitude")
-        if lat is not None and lon is not None:
-            return float(lat), float(lon)
-        return None
-
-    @property
-    def _distance_km(self) -> float | None:
-        """Calculate distance from HA home to this store in km."""
-        coords = self._store_coords
-        if coords is None:
-            return None
+        store_lat = location.get("latitude")
+        store_lon = location.get("longitude")
         ha_lat = self._hass.config.latitude
         ha_lon = self._hass.config.longitude
-        if ha_lat is None or ha_lon is None:
+        if None in (store_lat, store_lon, ha_lat, ha_lon):
             return None
-        return _haversine_km(ha_lat, ha_lon, coords[0], coords[1])
-
-    @property
-    def name(self) -> str:
-        store = (self._item_data or {}).get("store", {})
-        store_name = store.get("store_name", "Ukendt butik")
-        branch = store.get("branch", "")
-        if branch:
-            return f"{store_name} – {branch}"
-        return store_name
-
-    @property
-    def icon(self) -> str:
-        if self._item_data:
-            return "mdi:shopping-outline" if self._item_data.get("items_available", 0) > 0 else "mdi:shopping-remove"
-        return "mdi:food-takeout-box"
-
-    @property
-    def native_value(self) -> int:
-        return (self._item_data or {}).get("items_available", 0)
-
-    @property
-    def native_unit_of_measurement(self) -> str:
-        return "pakker"
+        return _haversine_km(ha_lat, ha_lon, float(store_lat), float(store_lon))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -191,8 +198,6 @@ class TgtgItemSensor(CoordinatorEntity, SensorEntity):
         store_location = store.get("store_location", {})
         address = store_location.get("address", {})
         location = store_location.get("location", {})
-        store_lat = location.get("latitude")
-        store_lon = location.get("longitude")
 
         attrs: dict[str, Any] = {
             ATTR_ITEM_ID: self._item_id,
@@ -213,16 +218,18 @@ class TgtgItemSensor(CoordinatorEntity, SensorEntity):
             ATTR_FAVORITE: self._item_data.get("favorite", False),
             ATTR_SOLD_OUT: self._item_data.get("items_available", 0) == 0,
             ATTR_STORE_ADDRESS: address.get("address_line"),
-            ATTR_RATING: store.get("average_overall_rating", {}).get("average_overall_rating"),
+            ATTR_RATING: store.get("average_overall_rating", {}).get(
+                "average_overall_rating"
+            ),
         }
 
-        # GPS-koordinater på butikken
+        store_lat = location.get("latitude")
+        store_lon = location.get("longitude")
         if store_lat is not None:
             attrs[ATTR_STORE_LATITUDE] = float(store_lat)
         if store_lon is not None:
             attrs[ATTR_STORE_LONGITUDE] = float(store_lon)
 
-        # Afstand fra HA's hjemmekoordinater
         dist = self._distance_km
         if dist is not None:
             attrs[ATTR_DISTANCE_KM] = dist
