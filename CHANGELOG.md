@@ -18,3 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dynamic entity creation — new favourites appear without restart
 - GitHub Actions: HACS validation, hassfest, release automation
 - Bilingual UI: English and Danish (`da`)
+
+## [1.0.1] - 2026-06-16
+
+### Fixed
+- Replaced deprecated `FlowResult` with `config_entries.ConfigFlowResult` (HA 2024.x compatibility)
+- Fixed `OptionsFlow.__init__` signature — removed `config_entry` parameter (now accessed via `self.config_entry`)
+- Renamed config flow step `login` → `link` to avoid broken `description_placeholders`
+- Guarded `tgtg` import inside functions to prevent 500 error if package not yet installed
+- Added `missing_dependency` and `cannot_connect` error keys to translations
+- Updated `en.json` and `da.json` to match corrected step IDs
