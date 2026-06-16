@@ -7,7 +7,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import callback
 
 from .const import (
     CONF_EMAIL,
@@ -29,10 +29,9 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize flow."""
         self._email: str | None = None
         self._credentials: dict | None = None
+        self._client: Any = None
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """Step 1 — collect email address."""
         errors: dict[str, str] = {}
 
@@ -42,21 +41,19 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(email)
             self._abort_if_unique_id_configured()
 
-            # Kick off the TGTG magic-link flow in a thread
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
 
-                def _start_login() -> TgtgClient:
-                    return TgtgClient(email=email)
-
-                self._client = await self.hass.async_add_executor_job(_start_login)
+                self._client = await self.hass.async_add_executor_job(
+                    lambda: TgtgClient(email=email)
+                )
                 self._email = email
                 return await self.async_step_link()
 
             except ImportError:
                 errors["base"] = "missing_dependency"
             except Exception as err:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error starting TGTG login: %s", err)
+                _LOGGER.exception("Error starting TGTG login: %s", err)
                 errors["base"] = "cannot_connect"
 
         return self.async_show_form(
@@ -65,20 +62,16 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_link(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Step 2 — user clicks magic link in email, then submits here."""
+    async def async_step_link(self, user_input: dict[str, Any] | None = None):
+        """Step 2 — user clicks magic link, then submits here."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             try:
-                credentials = await self.hass.async_add_executor_job(
+                self._credentials = await self.hass.async_add_executor_job(
                     self._client.get_credentials
                 )
-                self._credentials = credentials
                 return await self.async_step_options()
-
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("TGTG credential fetch failed: %s", err)
                 errors["base"] = "invalid_auth"
@@ -90,9 +83,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_options(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
+    async def async_step_options(self, user_input: dict[str, Any] | None = None):
         """Step 3 — pick polling interval."""
         if user_input is not None:
             return self.async_create_entry(
@@ -122,9 +113,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> TgtgOptionsFlow:
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
         """Return the options flow handler."""
         return TgtgOptionsFlow()
 
@@ -132,9 +121,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class TgtgOptionsFlow(config_entries.OptionsFlow):
     """Options flow — change polling interval after setup."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """Handle options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)

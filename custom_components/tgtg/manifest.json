@@ -1,12 +1,12 @@
 {
   "domain": "tgtg",
   "name": "Too Good To Go",
-  "version": "1.0.1",
-  "documentation": "https://github.com/custom-components/tgtg",
-  "issue_tracker": "https://github.com/custom-components/tgtg/issues",
+  "version": "1.0.2",
+  "documentation": "https://github.com/Steppedrengen/ha-tgtg",
+  "issue_tracker": "https://github.com/Steppedrengen/ha-tgtg/issues",
   "dependencies": [],
   "codeowners": [],
-  "requirements": ["tgtg-python==7.5.9"],
+  "requirements": ["tgtg>=0.17.0"],
   "config_flow": true,
   "iot_class": "cloud_polling",
   "integration_type": "hub"

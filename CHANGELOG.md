@@ -28,3 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guarded `tgtg` import inside functions to prevent 500 error if package not yet installed
 - Added `missing_dependency` and `cannot_connect` error keys to translations
 - Updated `en.json` and `da.json` to match corrected step IDs
+
+## [1.0.2] - 2026-06-16
+
+### Fixed
+- Removed `ConfigFlowResult` return type annotations — caused 500 error on older HA builds
+- Fixed wrong PyPI package name: `tgtg-python` → `tgtg>=0.17.0`
+- Fixed documentation and issue_tracker URLs in manifest.json
