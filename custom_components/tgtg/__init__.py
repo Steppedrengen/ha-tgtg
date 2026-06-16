@@ -43,7 +43,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 email=entry.data.get(CONF_EMAIL),
                 access_token=credentials.get("access_token"),
                 refresh_token=credentials.get("refresh_token"),
-                user_id=credentials.get("user_id"),
                 cookie=credentials.get("cookie"),
             )
         )

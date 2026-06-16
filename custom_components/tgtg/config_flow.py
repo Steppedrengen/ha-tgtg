@@ -19,10 +19,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# TGTG API endpoints
-AUTH_BY_EMAIL_ENDPOINT = "auth/v0/authByEmail"
-AUTH_BY_PIN_ENDPOINT = "auth/v0/authByRequestPin"
-
 
 class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Too Good To Go."""
@@ -37,7 +33,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._polling_id: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Step 1 — collect email address."""
+        """Step 1 — collect email and send magic link/PIN email immediately."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -48,43 +44,48 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
+                from tgtg.exceptions import TgtgPollingError  # noqa: PLC0415
 
-                self._client = TgtgClient(email=email)
-                self._email = email
-
-                # Initiate email login flow
-                def _request_pin():
-                    resp = self._client._post(
-                        self._client._get_url(AUTH_BY_EMAIL_ENDPOINT),
-                        json={
-                            "device_type": self._client.device_type,
-                            "email": email,
-                        },
+                def _create_and_send(email: str):
+                    client = TgtgClient(email=email)
+                    # Send the auth request — this triggers the PIN/magic link email
+                    response = client._post(
+                        client._get_url("auth/v5/authByEmail"),
+                        json={"device_type": client.device_type, "email": email},
                     )
-                    if resp.status_code != 200:
-                        raise Exception(
-                            f"TGTG API error: {resp.status_code} - {resp.text}"
-                        )
-                    data = resp.json()
-                    state = data.get("state")
-                    if state == "TERMS":
-                        raise Exception(
-                            f"Email {email} is not linked to a TGTG account. "
-                            "Please sign up in the TGTG app first."
-                        )
-                    if state != "WAIT":
-                        raise Exception(f"Unexpected auth state: {state}")
-                    self._polling_id = data.get("polling_id")
-                    return self._polling_id
+                    if response.status_code == 200:
+                        data = response.json()
+                        state = data.get("state", "")
+                        if state == "TERMS":
+                            raise TgtgPollingError(
+                                f"Email {email} is not linked to a TGTG account."
+                            )
+                        elif state == "WAIT":
+                            return client, data.get("polling_id")
+                        else:
+                            raise Exception(f"Unexpected state: {state}")
+                    elif response.status_code == 429:
+                        raise Exception("too_many_requests")
+                    else:
+                        raise Exception(f"API error {response.status_code}")
 
-                await self.hass.async_add_executor_job(_request_pin)
+                self._client, self._polling_id = await self.hass.async_add_executor_job(
+                    _create_and_send, email
+                )
+                self._email = email
                 return await self.async_step_pin()
 
             except ImportError:
                 errors["base"] = "missing_dependency"
             except Exception as err:  # noqa: BLE001
-                _LOGGER.exception("Error initiating TGTG login: %s", err)
-                errors["base"] = "cannot_connect"
+                err_str = str(err)
+                _LOGGER.exception("Error initiating TGTG login: %s", err_str)
+                if "too_many_requests" in err_str:
+                    errors["base"] = "too_many_requests"
+                elif "not linked" in err_str:
+                    errors["base"] = "not_registered"
+                else:
+                    errors["base"] = "cannot_connect"
 
         return self.async_show_form(
             step_id="user",
@@ -97,45 +98,46 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            pin = user_input.get("pin", "").strip()
+            pin = str(user_input.get("pin", "")).strip()
             if not pin:
-                errors["pin"] = "pin_required"
+                errors["pin"] = "required"
             else:
                 try:
-                    def _validate_pin():
+                    def _validate_pin(email: str, polling_id: str, pin: str):
+                        from http import HTTPStatus  # noqa: PLC0415
                         resp = self._client._post(
-                            self._client._get_url(AUTH_BY_PIN_ENDPOINT),
+                            self._client._get_url("auth/v5/authByRequestPin"),
                             json={
                                 "device_type": self._client.device_type,
-                                "email": self._email,
+                                "email": email,
                                 "request_pin": pin,
-                                "request_polling_id": self._polling_id,
+                                "request_polling_id": polling_id,
                             },
                         )
-                        if resp.status_code != 200:
-                            raise Exception(
-                                f"PIN validation failed: {resp.status_code}"
-                            )
-                        data = resp.json()
-                        cookie = resp.headers.get("Set-Cookie", "")
-                        return {
-                            "access_token": data.get("access_token"),
-                            "refresh_token": data.get("refresh_token"),
-                            "cookie": cookie,
-                        }
+                        if resp.status_code == HTTPStatus.OK:
+                            data = resp.json()
+                            return {
+                                "access_token": data.get("access_token"),
+                                "refresh_token": data.get("refresh_token"),
+                                "cookie": resp.headers.get("Set-Cookie", ""),
+                            }
+                        elif resp.status_code == 403:
+                            raise Exception("invalid_pin")
+                        else:
+                            raise Exception(f"PIN error {resp.status_code}: {resp.text[:100]}")
 
                     self._credentials = await self.hass.async_add_executor_job(
-                        _validate_pin
+                        _validate_pin, self._email, self._polling_id, pin
                     )
-
-                    if not self._credentials.get("access_token"):
-                        raise Exception("No access token in response")
-
                     return await self.async_step_options()
 
                 except Exception as err:  # noqa: BLE001
-                    _LOGGER.error("PIN validation failed: %s", err)
-                    errors["base"] = "invalid_pin"
+                    err_str = str(err)
+                    _LOGGER.error("TGTG PIN validation failed: %s", err_str)
+                    if "invalid_pin" in err_str:
+                        errors["base"] = "invalid_pin"
+                    else:
+                        errors["base"] = "invalid_auth"
 
         return self.async_show_form(
             step_id="pin",
