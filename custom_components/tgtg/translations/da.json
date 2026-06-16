@@ -2,35 +2,37 @@
   "config": {
     "step": {
       "user": {
-        "title": "Too Good To Go – Login",
-        "description": "Indtast din Too Good To Go e-mailadresse. Du modtager en loginmail fra TGTG.",
+        "title": "Too Good To Go",
+        "description": "Indtast din Too Good To Go e-mailadresse. Du modtager et magic link i din indbakke — ingen adgangskode kræves.",
         "data": {
-          "email": "E-mail"
+          "email": "E-mailadresse"
         }
       },
-      "login": {
-        "title": "Bekræft login",
-        "description": "En loginmail er sendt til **{email}**.\n\nÅbn e-mailen fra Too Good To Go og klik på loginlinket. Kom derefter tilbage og tryk 'Send'."
+      "link": {
+        "title": "Tjek din e-mail",
+        "description": "Et loginlink er sendt til **{email}**.\n\n1. Åbn e-mailen fra Too Good To Go\n2. Klik på loginlinket\n3. Kom tilbage her og tryk **Send**"
       },
       "options": {
-        "title": "Indstillinger",
-        "description": "Vælg hvor ofte Too Good To Go data opdateres.",
+        "title": "Opdateringsinterval",
+        "description": "Hvor ofte skal Home Assistant tjekke for ledige pakker?",
         "data": {
           "scan_interval": "Opdateringsinterval (minutter)"
         }
       }
     },
     "error": {
-      "invalid_auth": "Login mislykkedes. Prøv igen – husk at klikke på linket i loginmailen."
+      "invalid_auth": "Kunne ikke hente loginoplysninger. Sørg for at klikke på linket i e-mailen inden du trykker Send.",
+      "cannot_connect": "Kunne ikke forbinde til Too Good To Go. Tjek din internetforbindelse og prøv igen.",
+      "missing_dependency": "Pakken tgtg-python er ikke installeret. Genstart Home Assistant og prøv igen."
     },
     "abort": {
-      "already_configured": "Too Good To Go er allerede konfigureret med denne e-mail."
+      "already_configured": "Denne Too Good To Go-konto er allerede konfigureret."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Too Good To Go – Indstillinger",
+        "title": "Too Good To Go — indstillinger",
         "data": {
           "scan_interval": "Opdateringsinterval (minutter)"
         }

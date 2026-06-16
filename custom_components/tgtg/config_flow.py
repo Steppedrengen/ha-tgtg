@@ -8,8 +8,6 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
-import homeassistant.helpers.config_validation as cv
 
 from .const import (
     CONF_EMAIL,
@@ -20,26 +18,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-async def validate_credentials(hass: HomeAssistant, email: str) -> dict[str, Any]:
-    """Validate credentials by initiating TGTG login."""
-    from tgtg import TgtgClient
-
-    errors: dict[str, str] = {}
-
-    try:
-        # TgtgClient with email triggers polling-based login flow
-        client = await hass.async_add_executor_job(
-            lambda: TgtgClient(email=email)
-        )
-        # Try to get credentials to verify login
-        credentials = await hass.async_add_executor_job(client.get_credentials)
-        return {"credentials": credentials, "errors": {}}
-    except Exception as err:
-        _LOGGER.error("TGTG login fejlede: %s", err)
-        errors["base"] = "invalid_auth"
-        return {"credentials": None, "errors": errors}
 
 
 class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -54,67 +32,68 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step - get email."""
+    ) -> config_entries.ConfigFlowResult:
+        """Step 1 — collect email address."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            email = user_input[CONF_EMAIL]
+            email = user_input[CONF_EMAIL].strip().lower()
 
-            # Check for duplicate entries
-            await self.async_set_unique_id(email.lower())
+            await self.async_set_unique_id(email)
             self._abort_if_unique_id_configured()
 
-            self._email = email
-            return await self.async_step_login()
+            # Kick off the TGTG magic-link flow in a thread
+            try:
+                from tgtg import TgtgClient  # noqa: PLC0415
+
+                def _start_login() -> TgtgClient:
+                    return TgtgClient(email=email)
+
+                self._client = await self.hass.async_add_executor_job(_start_login)
+                self._email = email
+                return await self.async_step_link()
+
+            except ImportError:
+                errors["base"] = "missing_dependency"
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Unexpected error starting TGTG login: %s", err)
+                errors["base"] = "cannot_connect"
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_EMAIL): str,
-                }
-            ),
-            description_placeholders={
-                "info": "Indtast din Too Good To Go e-mail. Du vil modtage en login-email fra TGTG."
-            },
+            data_schema=vol.Schema({vol.Required(CONF_EMAIL): str}),
             errors=errors,
         )
 
-    async def async_step_login(
+    async def async_step_link(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Wait for user to confirm email login."""
+    ) -> config_entries.ConfigFlowResult:
+        """Step 2 — user clicks magic link in email, then submits here."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Try to get credentials after user has clicked email link
-            result = await validate_credentials(self.hass, self._email)
-
-            if result["credentials"]:
-                self._credentials = result["credentials"]
+            try:
+                credentials = await self.hass.async_add_executor_job(
+                    self._client.get_credentials
+                )
+                self._credentials = credentials
                 return await self.async_step_options()
-            else:
-                errors = result["errors"]
+
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("TGTG credential fetch failed: %s", err)
+                errors["base"] = "invalid_auth"
 
         return self.async_show_form(
-            step_id="login",
+            step_id="link",
             data_schema=vol.Schema({}),
-            description_placeholders={
-                "email": self._email,
-                "instructions": (
-                    f"En login-email er sendt til {self._email}.\n\n"
-                    "Åbn emailen fra Too Good To Go og klik på linket. "
-                    "Kom derefter tilbage her og tryk 'Send'."
-                ),
-            },
+            description_placeholders={"email": self._email or ""},
             errors=errors,
         )
 
     async def async_step_options(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle options step."""
+    ) -> config_entries.ConfigFlowResult:
+        """Step 3 — pick polling interval."""
         if user_input is not None:
             return self.async_create_entry(
                 title=f"Too Good To Go ({self._email})",
@@ -134,8 +113,9 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
                     ): vol.All(
-                        vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=60)
-                    ),
+                        vol.Coerce(int),
+                        vol.Range(min=MIN_SCAN_INTERVAL, max=60),
+                    )
                 }
             ),
         )
@@ -145,25 +125,21 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> TgtgOptionsFlow:
-        """Get the options flow for this handler."""
-        return TgtgOptionsFlow(config_entry)
+        """Return the options flow handler."""
+        return TgtgOptionsFlow()
 
 
 class TgtgOptionsFlow(config_entries.OptionsFlow):
-    """Handle options for Too Good To Go."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    """Options flow — change polling interval after setup."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self.config_entry.options.get(
+        current = self.config_entry.options.get(
             CONF_SCAN_INTERVAL,
             self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
@@ -172,11 +148,10 @@ class TgtgOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL, default=current_interval
-                    ): vol.All(
-                        vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=60)
-                    ),
+                    vol.Optional(CONF_SCAN_INTERVAL, default=current): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(min=MIN_SCAN_INTERVAL, max=60),
+                    )
                 }
             ),
         )
