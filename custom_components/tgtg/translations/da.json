@@ -3,31 +3,27 @@
     "step": {
       "user": {
         "title": "Too Good To Go",
-        "description": "Indtast din Too Good To Go e-mailadresse. Du modtager en e-mail med en PIN-kode.",
-        "data": {
-          "email": "E-mailadresse"
-        }
+        "description": "Indtast din Too Good To Go e-mailadresse. Du modtager en PIN-kode i din indbakke.",
+        "data": { "email": "E-mailadresse" }
       },
       "pin": {
         "title": "Indtast PIN-kode",
-        "description": "En PIN-kode er sendt til **{email}**.\n\nTjek din e-mail og indtast den 6-cifrede PIN nedenfor.",
-        "data": {
-          "pin": "PIN-kode"
-        }
+        "description": "En PIN-kode er sendt til **{email}**.\n\nTjek din indbakke og indtast PIN-koden nedenfor.",
+        "data": { "pin": "PIN-kode" }
       },
       "options": {
         "title": "Opdateringsinterval",
         "description": "Hvor ofte skal Home Assistant tjekke for ledige pakker?",
-        "data": {
-          "scan_interval": "Opdateringsinterval (minutter)"
-        }
+        "data": { "scan_interval": "Opdateringsinterval (minutter)" }
       }
     },
     "error": {
-      "invalid_pin": "Ugyldig PIN-kode. Tjek din e-mail og prøv igen.",
-      "cannot_connect": "Kunne ikke forbinde til Too Good To Go. Tjek din internetforbindelse og e-mailadresse.",
+      "invalid_pin": "Forkert PIN-kode. Tjek din e-mail og prøv igen.",
+      "cannot_connect": "Kunne ikke forbinde til Too Good To Go. Tjek din internetforbindelse.",
       "missing_dependency": "Pakken tgtg er ikke installeret. Genstart Home Assistant og prøv igen.",
-      "pin_required": "PIN-kode er påkrævet."
+      "pin_required": "PIN-kode er påkrævet.",
+      "too_many_requests": "For mange loginforsøg. Vent venligst et par minutter og prøv igen.",
+      "not_registered": "Denne e-mail er ikke tilknyttet en TGTG-konto. Opret en konto i appen først."
     },
     "abort": {
       "already_configured": "Denne Too Good To Go-konto er allerede konfigureret."
@@ -37,9 +33,7 @@
     "step": {
       "init": {
         "title": "Too Good To Go — indstillinger",
-        "data": {
-          "scan_interval": "Opdateringsinterval (minutter)"
-        }
+        "data": { "scan_interval": "Opdateringsinterval (minutter)" }
       }
     }
   }

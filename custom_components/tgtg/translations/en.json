@@ -3,31 +3,27 @@
     "step": {
       "user": {
         "title": "Too Good To Go",
-        "description": "Enter your Too Good To Go email address. You'll receive an email with a PIN code.",
-        "data": {
-          "email": "Email address"
-        }
+        "description": "Enter your Too Good To Go email address. A PIN code will be sent to your inbox.",
+        "data": { "email": "Email address" }
       },
       "pin": {
         "title": "Enter PIN Code",
-        "description": "A PIN code has been sent to **{email}**.\n\nCheck your email and enter the 6-digit PIN below.",
-        "data": {
-          "pin": "PIN code"
-        }
+        "description": "A PIN code has been sent to **{email}**.\n\nCheck your inbox and enter the PIN below.",
+        "data": { "pin": "PIN code" }
       },
       "options": {
         "title": "Update interval",
         "description": "How often should Home Assistant check for available bags?",
-        "data": {
-          "scan_interval": "Update interval (minutes)"
-        }
+        "data": { "scan_interval": "Update interval (minutes)" }
       }
     },
     "error": {
-      "invalid_pin": "Invalid PIN code. Please check your email and try again.",
-      "cannot_connect": "Could not connect to Too Good To Go. Check your internet connection and email address.",
+      "invalid_pin": "Incorrect PIN code. Check your email and try again.",
+      "cannot_connect": "Could not connect to Too Good To Go. Check your internet connection.",
       "missing_dependency": "The tgtg package is not installed. Restart Home Assistant and try again.",
-      "pin_required": "PIN code is required."
+      "pin_required": "PIN code is required.",
+      "too_many_requests": "Too many login attempts. Please wait a few minutes and try again.",
+      "not_registered": "This email is not linked to a TGTG account. Sign up in the app first."
     },
     "abort": {
       "already_configured": "This Too Good To Go account is already configured."
@@ -37,9 +33,7 @@
     "step": {
       "init": {
         "title": "Too Good To Go options",
-        "data": {
-          "scan_interval": "Update interval (minutes)"
-        }
+        "data": { "scan_interval": "Update interval (minutes)" }
       }
     }
   }

@@ -26,63 +26,55 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        """Initialize flow."""
         self._email: str | None = None
         self._credentials: dict | None = None
         self._client: Any = None
         self._polling_id: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
-        """Step 1 — collect email and send magic link/PIN email immediately."""
+        """Step 1 — collect email."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip().lower()
-
             await self.async_set_unique_id(email)
             self._abort_if_unique_id_configured()
 
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
-                from tgtg.exceptions import TgtgPollingError  # noqa: PLC0415
-
-                def _create_and_send(email: str):
-                    client = TgtgClient(email=email)
-                    # Send the auth request — this triggers the PIN/magic link email
-                    response = client._post(
-                        client._get_url("auth/v5/authByEmail"),
-                        json={"device_type": client.device_type, "email": email},
-                    )
-                    if response.status_code == 200:
-                        data = response.json()
-                        state = data.get("state", "")
-                        if state == "TERMS":
-                            raise TgtgPollingError(
-                                f"Email {email} is not linked to a TGTG account."
-                            )
-                        elif state == "WAIT":
-                            return client, data.get("polling_id")
-                        else:
-                            raise Exception(f"Unexpected state: {state}")
-                    elif response.status_code == 429:
-                        raise Exception("too_many_requests")
-                    else:
-                        raise Exception(f"API error {response.status_code}")
-
-                self._client, self._polling_id = await self.hass.async_add_executor_job(
-                    _create_and_send, email
-                )
+                self._client = TgtgClient(email=email)
                 self._email = email
+
+                def _request_pin():
+                    # Use the correct v5 endpoint via _post() so DataDome is handled
+                    resp = self._client._post(
+                        self._client._get_url("auth/v5/authByEmail"),
+                        json={"device_type": self._client.device_type, "email": email},
+                    )
+                    _LOGGER.debug("authByEmail status=%s body=%s", resp.status_code, resp.text[:300])
+                    if resp.status_code == 429:
+                        raise Exception("too_many_requests")
+                    if resp.status_code != 200:
+                        raise Exception(f"api_error:{resp.status_code}")
+                    data = resp.json()
+                    state = data.get("state", "")
+                    if state == "TERMS":
+                        raise Exception("not_registered")
+                    if state != "WAIT":
+                        raise Exception(f"unexpected_state:{state}")
+                    return data.get("polling_id")
+
+                self._polling_id = await self.hass.async_add_executor_job(_request_pin)
                 return await self.async_step_pin()
 
             except ImportError:
                 errors["base"] = "missing_dependency"
             except Exception as err:  # noqa: BLE001
-                err_str = str(err)
-                _LOGGER.exception("Error initiating TGTG login: %s", err_str)
-                if "too_many_requests" in err_str:
+                msg = str(err)
+                _LOGGER.error("TGTG login initiation failed: %s", msg)
+                if "too_many_requests" in msg:
                     errors["base"] = "too_many_requests"
-                elif "not linked" in err_str:
+                elif "not_registered" in msg:
                     errors["base"] = "not_registered"
                 else:
                     errors["base"] = "cannot_connect"
@@ -94,50 +86,32 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_pin(self, user_input: dict[str, Any] | None = None):
-        """Step 2 — user enters PIN from email."""
+        """Step 2 — enter PIN from email."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            pin = str(user_input.get("pin", "")).strip()
+            pin = user_input.get("pin", "").strip()
             if not pin:
-                errors["pin"] = "required"
+                errors["pin"] = "pin_required"
             else:
                 try:
-                    def _validate_pin(email: str, polling_id: str, pin: str):
-                        from http import HTTPStatus  # noqa: PLC0415
-                        resp = self._client._post(
-                            self._client._get_url("auth/v5/authByRequestPin"),
-                            json={
-                                "device_type": self._client.device_type,
-                                "email": email,
-                                "request_pin": pin,
-                                "request_polling_id": polling_id,
-                            },
-                        )
-                        if resp.status_code == HTTPStatus.OK:
-                            data = resp.json()
-                            return {
-                                "access_token": data.get("access_token"),
-                                "refresh_token": data.get("refresh_token"),
-                                "cookie": resp.headers.get("Set-Cookie", ""),
-                            }
-                        elif resp.status_code == 403:
-                            raise Exception("invalid_pin")
-                        else:
-                            raise Exception(f"PIN error {resp.status_code}: {resp.text[:100]}")
+                    def _validate_pin():
+                        # _auth_by_pin sets access_token, refresh_token, cookie on client
+                        self._client._auth_by_pin(self._polling_id, pin)
+                        return {
+                            "access_token": self._client.access_token,
+                            "refresh_token": self._client.refresh_token,
+                            "cookie": self._client.cookie,
+                        }
 
-                    self._credentials = await self.hass.async_add_executor_job(
-                        _validate_pin, self._email, self._polling_id, pin
-                    )
+                    self._credentials = await self.hass.async_add_executor_job(_validate_pin)
+                    if not self._credentials.get("access_token"):
+                        raise Exception("No access token received")
                     return await self.async_step_options()
 
                 except Exception as err:  # noqa: BLE001
-                    err_str = str(err)
-                    _LOGGER.error("TGTG PIN validation failed: %s", err_str)
-                    if "invalid_pin" in err_str:
-                        errors["base"] = "invalid_pin"
-                    else:
-                        errors["base"] = "invalid_auth"
+                    _LOGGER.error("PIN validation failed: %s", err)
+                    errors["base"] = "invalid_pin"
 
         return self.async_show_form(
             step_id="pin",
@@ -147,61 +121,44 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_options(self, user_input: dict[str, Any] | None = None):
-        """Step 3 — pick polling interval."""
+        """Step 3 — polling interval."""
         if user_input is not None:
             return self.async_create_entry(
                 title=f"Too Good To Go ({self._email})",
                 data={
                     CONF_EMAIL: self._email,
                     "credentials": self._credentials,
-                    CONF_SCAN_INTERVAL: user_input.get(
-                        CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-                    ),
+                    CONF_SCAN_INTERVAL: user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 },
             )
-
         return self.async_show_form(
             step_id="options",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
-                    ): vol.All(
-                        vol.Coerce(int),
-                        vol.Range(min=MIN_SCAN_INTERVAL, max=60),
-                    )
-                }
-            ),
+            data_schema=vol.Schema({
+                vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
+                    vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=60)
+                )
+            }),
         )
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-        """Return the options flow handler."""
         return TgtgOptionsFlow()
 
 
 class TgtgOptionsFlow(config_entries.OptionsFlow):
-    """Options flow — change polling interval after setup."""
-
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
-        """Handle options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-
         current = self.config_entry.options.get(
             CONF_SCAN_INTERVAL,
             self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
-
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_SCAN_INTERVAL, default=current): vol.All(
-                        vol.Coerce(int),
-                        vol.Range(min=MIN_SCAN_INTERVAL, max=60),
-                    )
-                }
-            ),
+            data_schema=vol.Schema({
+                vol.Optional(CONF_SCAN_INTERVAL, default=current): vol.All(
+                    vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=60)
+                )
+            }),
         )
