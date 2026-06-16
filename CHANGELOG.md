@@ -56,3 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Now uses direct TGTG API calls to `/auth/v0/authByEmail` and `/auth/v0/authByRequestPin`
 - Removed dependency on `start_polling()` method
 - Better error messages for TGTG API failures
+
+## [1.0.5] - 2026-06-16
+
+### Fixed
+- **Root cause found: wrong API endpoint version** — was calling `auth/v0/` which doesn't exist; correct endpoint is `auth/v5/authByEmail` and `auth/v5/authByRequestPin`
+- This is why PIN email was never sent — the request was hitting a non-existent endpoint
+- Now uses `_post()` from TgtgClient so DataDome bot-protection cookie is handled automatically
+- Now uses `_auth_by_pin()` directly from TgtgClient for PIN validation
+- Added error handling for `too_many_requests` and `not_registered` states
+- Debug logging added for easier troubleshooting

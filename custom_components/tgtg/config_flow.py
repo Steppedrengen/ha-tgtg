@@ -19,10 +19,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# TGTG API endpoints
-AUTH_BY_EMAIL_ENDPOINT = "auth/v0/authByEmail"
-AUTH_BY_PIN_ENDPOINT = "auth/v0/authByRequestPin"
-
 
 class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Too Good To Go."""
@@ -48,43 +44,55 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 from tgtg import TgtgClient  # noqa: PLC0415
+                from tgtg.exceptions import TgtgPollingError  # noqa: PLC0415
 
+                # Instantiate client — this sets up session, headers, DataDome cookie
                 self._client = TgtgClient(email=email)
                 self._email = email
 
-                # Initiate email login flow
                 def _request_pin():
+                    # Use the exact same endpoint the library uses: auth/v5/authByEmail
+                    # and go through _post() so DataDome cookie is handled automatically
                     resp = self._client._post(
-                        self._client._get_url(AUTH_BY_EMAIL_ENDPOINT),
+                        self._client._get_url("auth/v5/authByEmail"),
                         json={
                             "device_type": self._client.device_type,
                             "email": email,
                         },
                     )
+                    _LOGGER.debug(
+                        "TGTG authByEmail status=%s body=%s",
+                        resp.status_code,
+                        resp.text[:200],
+                    )
+                    if resp.status_code == 429:
+                        raise Exception("too_many_requests")
                     if resp.status_code != 200:
                         raise Exception(
-                            f"TGTG API error: {resp.status_code} - {resp.text}"
+                            f"TGTG API returned {resp.status_code}: {resp.text[:100]}"
                         )
                     data = resp.json()
-                    state = data.get("state")
+                    state = data.get("state", "")
                     if state == "TERMS":
-                        raise Exception(
-                            f"Email {email} is not linked to a TGTG account. "
-                            "Please sign up in the TGTG app first."
-                        )
+                        raise Exception("not_registered")
                     if state != "WAIT":
-                        raise Exception(f"Unexpected auth state: {state}")
-                    self._polling_id = data.get("polling_id")
-                    return self._polling_id
+                        raise Exception(f"unexpected_state:{state}")
+                    return data.get("polling_id")
 
-                await self.hass.async_add_executor_job(_request_pin)
+                self._polling_id = await self.hass.async_add_executor_job(_request_pin)
                 return await self.async_step_pin()
 
             except ImportError:
                 errors["base"] = "missing_dependency"
             except Exception as err:  # noqa: BLE001
-                _LOGGER.exception("Error initiating TGTG login: %s", err)
-                errors["base"] = "cannot_connect"
+                msg = str(err)
+                _LOGGER.error("TGTG login initiation failed: %s", msg)
+                if "too_many_requests" in msg:
+                    errors["base"] = "too_many_requests"
+                elif "not_registered" in msg:
+                    errors["base"] = "not_registered"
+                else:
+                    errors["base"] = "cannot_connect"
 
         return self.async_show_form(
             step_id="user",
@@ -103,25 +111,13 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     def _validate_pin():
-                        resp = self._client._post(
-                            self._client._get_url(AUTH_BY_PIN_ENDPOINT),
-                            json={
-                                "device_type": self._client.device_type,
-                                "email": self._email,
-                                "request_pin": pin,
-                                "request_polling_id": self._polling_id,
-                            },
-                        )
-                        if resp.status_code != 200:
-                            raise Exception(
-                                f"PIN validation failed: {resp.status_code}"
-                            )
-                        data = resp.json()
-                        cookie = resp.headers.get("Set-Cookie", "")
+                        # Use the exact same method the library uses: _auth_by_pin
+                        # This sets access_token, refresh_token, cookie on the client
+                        self._client._auth_by_pin(self._polling_id, pin)
                         return {
-                            "access_token": data.get("access_token"),
-                            "refresh_token": data.get("refresh_token"),
-                            "cookie": cookie,
+                            "access_token": self._client.access_token,
+                            "refresh_token": self._client.refresh_token,
+                            "cookie": self._client.cookie,
                         }
 
                     self._credentials = await self.hass.async_add_executor_job(
@@ -129,7 +125,7 @@ class TgtgConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
 
                     if not self._credentials.get("access_token"):
-                        raise Exception("No access token in response")
+                        raise Exception("No access token received")
 
                     return await self.async_step_options()
 
